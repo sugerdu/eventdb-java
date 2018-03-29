@@ -1,4 +1,4 @@
-package org.osv.eventdb.fits;
+package org.osv.eventdb.fits.mapred;
 
 import java.io.DataInput; 
 import java.io.DataOutput; 
@@ -15,12 +15,10 @@ public class HeEvtArray implements Writable{
 		for(int i = 0; i < evts.length; i++)
 			this.evts[i] = evts[i];
 	}
-	@Override
 	public void write(DataOutput out) throws IOException{
 		out.writeInt(length);
 		out.write(evts);
 	}
-	@Override
 	public void readFields(DataInput in) throws IOException{
 		length = in.readInt();
 		evts = new byte[16 * length];

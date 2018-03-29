@@ -60,6 +60,9 @@ public abstract class Evt implements WritableComparable<Evt>{
 		for(int i = 0; i < length; i++)
 			this.bin[i] = bin[i];
 	}
+	public int getLength(){
+		return length;
+	}
 	public double getTime(){
 		return time;
 	}
@@ -90,19 +93,16 @@ public abstract class Evt implements WritableComparable<Evt>{
 	public void setEventType(byte eventType){
 		this.eventType = eventType;
 	}
-	@Override
 	public void write(DataOutput out) throws IOException{
 		out.writeInt(length);
 		out.write(bin);
 	}
-	@Override
 	public void readFields(DataInput in) throws IOException{
 		length = in.readInt();
 		bin = new byte[length];
 		for(int i = 0; i < length; i++)
 			bin[i] = in.readByte();
 	}
-	@Override
 	public int compareTo(Evt evt){
 		Double x = getTime();
 		return x.compareTo(evt.getTime());

@@ -1,4 +1,4 @@
-package org.osv.eventdb.fits;
+package org.osv.eventdb.fits.mapred;
 
 import java.io.DataInput; 
 import java.io.DataOutput; 
@@ -20,11 +20,9 @@ public class HeEvtData implements WritableComparable<HeEvtData>{
 		setEvt(evt);
 		initialize();
 	}
-	@Override
 	public void write(DataOutput out) throws IOException{
 		out.write(evt);
 	}
-	@Override
 	public void readFields(DataInput in) throws IOException{
 		for(int i = 0; i < 16; i++)
 			evt[i] = in.readByte();
@@ -62,8 +60,8 @@ public class HeEvtData implements WritableComparable<HeEvtData>{
 			evtParser.readByte();
 		eventType = evtParser.readByte();
 		evtParser.readByte();
+		evtParser.close();
 	}
-	@Override
 	public int compareTo(HeEvtData evtData){
 		Double x = getTime();
 		return x.compareTo(evtData.getTime());

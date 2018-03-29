@@ -1,10 +1,9 @@
-package org.osv.eventdb.fits;
+package org.osv.eventdb.fits.mapred;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.net.URI;
 import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.conf.Configuration;
@@ -83,7 +82,7 @@ public class HeFitsFormat{
 			String local_file = fits.getAbsolutePath();
 			String local_file_name = fits.getName();
 			Path hdfs_path = new Path(hdfs_dir, local_file_name + ".evt");
-			HeFitsFormat doFormat = new HeFitsFormat(hdfs, local_file, hdfs_path.toString());
+			new HeFitsFormat(hdfs, local_file, hdfs_path.toString());
 		}
 	}
 }

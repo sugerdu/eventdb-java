@@ -51,10 +51,13 @@ Temporary Items
 *.sln
 *.suo
 *.log
-*.dst.csv
+.project
+.classpath
 node_modules/
 bin/
 obj/
 .idea/
 target/
 data/
+.settings/
+.vscode/

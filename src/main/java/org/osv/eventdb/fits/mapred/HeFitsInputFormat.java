@@ -1,4 +1,4 @@
-package org.osv.eventdb.fits;
+package org.osv.eventdb.fits.mapred;
 
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.LongWritable;

@@ -20,5 +20,6 @@ public class HeEvt extends Evt{
 		for(int i = 0; i < 3; i++)
 			evtParser.readByte();
 		setEventType(evtParser.readByte());
+		evtParser.close();
 	}
 }

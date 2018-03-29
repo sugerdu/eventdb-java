@@ -1,9 +1,7 @@
-package org.osv.eventdb.fits;
+package org.osv.eventdb.fits.mapred;
 
-import java.io.IOException;
 import java.util.*;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.*;
