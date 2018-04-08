@@ -10,30 +10,32 @@
 ****************************************************************************/
 package org.osv.eventdb.fits.evt;
 
-import java.io.DataInput; 
-import java.io.DataOutput; 
+import java.io.DataInput;
+import java.io.DataOutput;
 import java.io.IOException;
 import org.apache.hadoop.io.WritableComparable;
 
 /**
  * Used to deserialize fits event.
  */
-public abstract class Evt implements WritableComparable<Evt>{
-	private byte[] bin;				// Serialized byte stream of fits event
-	private int length;				// The length of bin
-	private double time;
-	private byte detID;
-	private byte channel;
-	private byte pulseWidth;
-	private byte eventType;
+public abstract class Evt implements WritableComparable<Evt> {
+	protected byte[] bin; // Serialized byte stream of fits event
+	protected int length; // The length of bin
+	protected double time;
+	protected byte detID;
+	protected byte channel;
+	protected byte pulseWidth;
+	protected byte eventType;
 
-	public Evt(){}
+	public Evt() {
+	}
+
 	/**
 	 * Creates an object by deserializing byte stream.
 	 * @param bin Serialized byte stream.
 	 * @throws IOException If failed to deserialize.
 	 */
-	public Evt(byte[] bin) throws IOException{
+	public Evt(byte[] bin) throws IOException {
 		setBin(bin);
 		deserialize();
 	}
@@ -47,63 +49,58 @@ public abstract class Evt implements WritableComparable<Evt>{
 	/**
 	 * Get serialized byte stream.
 	 */
-	public byte[] getBin(){
+	public byte[] getBin() {
 		return bin;
 	}
+
 	/**
 	 * Set serialized byte stream.
 	 * @param bin Serialized byte stream.
 	 */
-	public void setBin(byte[] bin){
+	public void setBin(byte[] bin) {
 		length = bin.length;
 		this.bin = new byte[length];
-		for(int i = 0; i < length; i++)
+		for (int i = 0; i < length; i++)
 			this.bin[i] = bin[i];
 	}
-	public int getLength(){
+
+	public int getLength() {
 		return length;
 	}
-	public double getTime(){
+
+	public double getTime() {
 		return time;
 	}
-	public void setTime(double time){
-		this.time = time;
-	}
-	public byte getDetID(){
+
+	public byte getDetID() {
 		return detID;
 	}
-	public void setDetID(byte detID){
-		this.detID = detID;
-	}
-	public byte getChannel(){
+
+	public byte getChannel() {
 		return channel;
 	}
-	public void setChannel(byte channel){
-		this.channel = channel;
-	}
-	public byte getPulseWidth(){
+
+	public byte getPulseWidth() {
 		return pulseWidth;
 	}
-	public void setPulseWidth(byte pulseWidth){
-		this.pulseWidth = pulseWidth;
-	}
-	public byte getEventType(){
+
+	public byte getEventType() {
 		return eventType;
 	}
-	public void setEventType(byte eventType){
-		this.eventType = eventType;
-	}
-	public void write(DataOutput out) throws IOException{
+
+	public void write(DataOutput out) throws IOException {
 		out.writeInt(length);
 		out.write(bin);
 	}
-	public void readFields(DataInput in) throws IOException{
+
+	public void readFields(DataInput in) throws IOException {
 		length = in.readInt();
 		bin = new byte[length];
-		for(int i = 0; i < length; i++)
+		for (int i = 0; i < length; i++)
 			bin[i] = in.readByte();
 	}
-	public int compareTo(Evt evt){
+
+	public int compareTo(Evt evt) {
 		Double x = getTime();
 		return x.compareTo(evt.getTime());
 	}

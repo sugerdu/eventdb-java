@@ -1,22 +1,32 @@
 package org.osv.eventdb.fits.io;
 
-import java.io.IOException;
+import java.io.*;
+import java.util.*;
+import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.conf.Configuration;
 import org.osv.eventdb.fits.evt.*;
 
-public class HeFits2Hbase extends Fits2Hbase<HeEvt>{
-	public HeFits2Hbase(String pathname, String tablename) throws IOException{
-		super(pathname, tablename, 16);
+public class HeFits2Hbase extends Fits2Hbase<HeEvt> {
+	public HeFits2Hbase(List<File> fitsFiles, String tablename, int regions) throws IOException {
+		super(fitsFiles, tablename, 16, regions);
 	}
-	public HeFits2Hbase(String pathname, String tablename, Configuration hconf) throws IOException{
-		super(pathname, tablename, hconf, 16);
+
+	public HeFits2Hbase(List<File> fitsFiles, Configuration hconf, String tablename, int regions) throws IOException {
+		super(fitsFiles, hconf, tablename, 16, regions);
 	}
+
+	public HeFits2Hbase(List<File> fitsFiles, Configuration hconf, Connection hconn, Table htable, int regions)
+			throws IOException {
+		super(fitsFiles, hconf, hconn, htable, 16, regions);
+	}
+
 	@Override
-	protected HeEvt getEvt(byte[] evtBin) throws IOException{
+	protected HeEvt getEvt(byte[] evtBin) throws IOException {
 		return new HeEvt(evtBin);
 	}
+
 	@Override
-	protected FitsFile<HeEvt> getFitsFile(String filename){
+	protected FitsFile<HeEvt> getFitsFile(String filename) {
 		return new HeFitsFile(filename);
 	}
 }
