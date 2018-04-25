@@ -4,6 +4,7 @@ import java.io.*;
 import java.util.*;
 import org.osv.eventdb.fits.io.*;
 import org.osv.eventdb.hbase.*;
+import org.osv.eventdb.util.*;
 
 public class Run {
 	public static void main(String[] args) throws Exception {
@@ -52,6 +53,11 @@ public class Run {
 			//talbename
 			taction.deleteTable(args[1]);
 			System.out.printf("success to delete table(%s)\n", args[1]);
+
+		}else if(args[0].equals("he2tsv")) {
+			//fitsfile tsvfile
+			Fits2Tsv.heConvert(args[1], args[2]);
+
 		}
 	}
 }
