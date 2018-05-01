@@ -53,6 +53,7 @@ Temporary Items
 *.log
 .project
 .classpath
+config.properties
 node_modules/
 bin/
 obj/
