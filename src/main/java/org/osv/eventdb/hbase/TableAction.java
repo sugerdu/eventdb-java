@@ -28,7 +28,7 @@ public class TableAction {
 		if (splitNum > 1000 || splitNum < 1)
 			throw new IOException("splitNum should be in 1~1000");
 		byte[][] splitKeys = new byte[splitNum - 1][];
-		for (int i = 0; i < splitNum -1; i++)
+		for (int i = 0; i < splitNum - 1; i++)
 			splitKeys[i] = Bytes.toBytes(String.format("%03d|", i));
 
 		Connection con = ConnectionFactory.createConnection(hconf);

@@ -9,7 +9,7 @@ import org.osv.eventdb.util.*;
 public class Run {
 	public static void main(String[] args) throws Exception {
 		if (args[0].equals("insertHeFits")) {
-			//pathname, talbename, regions, [threads]
+			// pathname, talbename, regions, [threads]
 			String pathname = args[1];
 			String tablename = args[2];
 			int regions = Integer.valueOf(args[3]);
@@ -44,19 +44,25 @@ public class Run {
 
 		} else if (args[0].equals("createTable")) {
 			TableAction taction = new TableAction();
-			//tablename maxVersions regions
+			// tablename maxVersions regions
 			taction.createTable(args[1], Integer.valueOf(args[2]), Integer.valueOf(args[3]));
 			System.out.printf("success to create table(%s)\n", args[1]);
 
 		} else if (args[0].equals("deleteTable")) {
 			TableAction taction = new TableAction();
-			//talbename
+			// talbename
 			taction.deleteTable(args[1]);
 			System.out.printf("success to delete table(%s)\n", args[1]);
 
-		}else if(args[0].equals("he2tsv")) {
-			//fitsfile tsvfile
+		} else if (args[0].equals("he2tsv")) {
+			// fitsfile tsvfile
 			Fits2Tsv.heConvert(args[1], args[2]);
+
+		} else if (args[0].equals("observer")) {
+			// tablename coprocessorClass jarPath
+			// org.osv.eventdb.util.HeFitsRegionObserver
+			ObserverAction action = new ObserverAction(args[1]);
+			action.addCoprocessor(args[2], args[3]);
 
 		}
 	}
