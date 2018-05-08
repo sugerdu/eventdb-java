@@ -85,6 +85,10 @@ public class HeFitsRegionObserver extends BaseRegionObserver {
 
 		//region operation
 		Region hregion = c.getEnvironment().getRegion();
+		//addition test
+		Get testGet = new Get(Bytes.toBytes("testRowkey"));
+		Result testResult = hregion.get(testGet);
+		result.add(testResult.getColumnLatestCell(Bytes.toBytes("data"), Bytes.toBytes("col1")));
 
 		c.bypass();
 	}

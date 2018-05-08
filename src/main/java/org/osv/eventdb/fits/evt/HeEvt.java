@@ -1,8 +1,9 @@
 package org.osv.eventdb.fits.evt;
 
-import java.io.IOException;
-import nom.tam.util.*;
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
+
+//import nom.tam.util.BufferedDataInputStream;
 
 public class HeEvt extends Evt {
 	public HeEvt() {
@@ -14,7 +15,8 @@ public class HeEvt extends Evt {
 
 	@Override
 	public void deserialize() throws IOException {
-		BufferedDataInputStream evtParser = new BufferedDataInputStream(new ByteArrayInputStream(bin));
+		EvtDecoder evtParser = new EvtDecoder(bin);
+		//BufferedDataInputStream evtParser = new BufferedDataInputStream(new ByteArrayInputStream(bin));
 		time = evtParser.readDouble();
 		detID = evtParser.readByte();
 		channel = evtParser.readByte();
@@ -22,6 +24,5 @@ public class HeEvt extends Evt {
 		for (int i = 0; i < 3; i++)
 			evtParser.readByte();
 		eventType = evtParser.readByte();
-		evtParser.close();
 	}
 }

@@ -43,13 +43,13 @@ public class Run {
 			}
 
 		} else if (args[0].equals("createTable")) {
-			TableAction taction = new TableAction();
-			// tablename maxVersions regions
-			taction.createTable(args[1], Integer.valueOf(args[2]), Integer.valueOf(args[3]));
+			TableAction taction = new TableAction(args[1]);
+			// tablename regions
+			taction.createTable(Integer.valueOf(args[2]));
 			System.out.printf("success to create table(%s)\n", args[1]);
 
 		} else if (args[0].equals("deleteTable")) {
-			TableAction taction = new TableAction();
+			TableAction taction = new TableAction(args[1]);
 			// talbename
 			taction.deleteTable(args[1]);
 			System.out.printf("success to delete table(%s)\n", args[1]);

@@ -1,18 +1,9 @@
-/****************************************************************************
-*     FileName: Evt.java
-*         Desc: Abstract class to deserialize fits event
-*       Author: Ashin Gau
-*        Email: ashingau@outlook.com
-*     HomePage: http://www.ashin.space
-*      Version: 0.0.1
-*   LastChange: 2018-03-20 13:19:50
-*      History:
-****************************************************************************/
 package org.osv.eventdb.fits.evt;
 
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+
 import org.apache.hadoop.io.WritableComparable;
 
 /**
@@ -32,6 +23,7 @@ public abstract class Evt implements WritableComparable<Evt> {
 
 	/**
 	 * Creates an object by deserializing byte stream.
+	 * 
 	 * @param bin Serialized byte stream.
 	 * @throws IOException If failed to deserialize.
 	 */
@@ -42,6 +34,7 @@ public abstract class Evt implements WritableComparable<Evt> {
 
 	/**
 	 * The method to deserialize byte stream and implemented by subclass.
+	 * 
 	 * @throws IOException If failed to deserialize;
 	 */
 	public abstract void deserialize() throws IOException;
@@ -55,6 +48,7 @@ public abstract class Evt implements WritableComparable<Evt> {
 
 	/**
 	 * Set serialized byte stream.
+	 * 
 	 * @param bin Serialized byte stream.
 	 */
 	public void setBin(byte[] bin) {
