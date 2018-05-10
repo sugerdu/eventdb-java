@@ -1,6 +1,5 @@
 package org.osv.eventdb.fits.evt;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 
 //import nom.tam.util.BufferedDataInputStream;

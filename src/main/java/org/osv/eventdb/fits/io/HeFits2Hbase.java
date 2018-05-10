@@ -1,23 +1,17 @@
 package org.osv.eventdb.fits.io;
 
-import java.io.*;
-import java.util.*;
-import org.apache.hadoop.hbase.client.*;
-import org.apache.hadoop.conf.Configuration;
-import org.osv.eventdb.fits.evt.*;
+import java.io.IOException;
+
+import org.osv.eventdb.fits.evt.HeEvt;
+import org.osv.eventdb.util.ConfigProperties;
 
 public class HeFits2Hbase extends Fits2Hbase<HeEvt> {
-	public HeFits2Hbase(List<File> fitsFiles, String tablename, int regions) throws IOException {
-		super(fitsFiles, tablename, 16, regions);
+	public HeFits2Hbase(FitsFileSet fits, ConfigProperties configProp, String tablename) throws Exception {
+		super(fits, configProp, tablename, 16);
 	}
 
-	public HeFits2Hbase(List<File> fitsFiles, Configuration hconf, String tablename, int regions) throws IOException {
-		super(fitsFiles, hconf, tablename, 16, regions);
-	}
-
-	public HeFits2Hbase(List<File> fitsFiles, Configuration hconf, Connection hconn, Table htable, int regions)
-			throws IOException {
-		super(fitsFiles, hconf, hconn, htable, 16, regions);
+	public HeFits2Hbase(FitsFileSet fits, String tablename) throws Exception {
+		super(fits, tablename, 16);
 	}
 
 	@Override

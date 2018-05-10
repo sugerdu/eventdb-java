@@ -1,98 +1,111 @@
 package org.osv.eventdb.fits.io;
 
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.*;
-import org.apache.hadoop.hbase.client.*;
-import org.apache.hadoop.hbase.util.Bytes;
-import org.davidmoten.hilbert.*;
-import org.osv.eventdb.fits.evt.*;
-import org.osv.eventdb.util.*;
-import java.io.*;
-import java.util.*;
+import java.io.File;
+import java.io.IOException;
+import java.net.URI;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hbase.CellUtil;
+import org.apache.hadoop.hbase.HBaseConfiguration;
+import org.apache.hadoop.hbase.HRegionInfo;
+import org.apache.hadoop.hbase.HRegionLocation;
+import org.apache.hadoop.hbase.TableName;
+import org.apache.hadoop.hbase.client.Connection;
+import org.apache.hadoop.hbase.client.ConnectionFactory;
+import org.apache.hadoop.hbase.client.Get;
+import org.apache.hadoop.hbase.client.HTable;
+import org.apache.hadoop.hbase.client.Put;
+import org.apache.hadoop.hbase.client.Table;
+import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.hbase.util.IdLock;
+import org.osv.eventdb.fits.evt.Evt;
+import org.osv.eventdb.hbase.TableAction;
+import org.osv.eventdb.util.BitArray;
+import org.osv.eventdb.util.ConfigProperties;
+import org.osv.eventdb.util.ConsistentHashRouter;
+import org.osv.eventdb.util.PhysicalNode;
 
 public abstract class Fits2Hbase<E extends Evt> implements Runnable {
-	protected List<File> fits;
+	protected FitsFileSet fits;
 	protected int evtLength;
-	protected SmallHilbertCurve hcurve;
 	protected Configuration hconf;
 	protected Connection hconn;
 	protected Table htable;
 	protected ConsistentHashRouter conHashRouter;
 	protected Thread thread;
+	protected int splits;
+	protected SimpleDateFormat timeformat;
+	protected long maxFileThreshold;
+	protected ConfigProperties configProp;
+	protected FileSystem hdfs;
+	static byte[] dataBytes = Bytes.toBytes("data");
+	static byte[] valueBytes = Bytes.toBytes("value");
 
-	private void init(List<File> fitsFiles, Configuration config, Connection conn, Table table, String tablename,
-			int len, int regions) throws IOException {
-		evtLength = len;
-		fits = fitsFiles;
+	public Fits2Hbase(FitsFileSet fits, ConfigProperties configProp, String tablename, int evtLength) throws Exception {
+		init(fits, configProp, tablename, evtLength);
+	}
 
-		if (config == null) {
-			ConfigProperties configProp = new ConfigProperties();
-			hconf = HBaseConfiguration.create();
-			hconf.set("hbase.zookeeper.property.clientPort",
-					configProp.getProperty("hbase.zookeeper.property.clientPort"));
-			hconf.set("hbase.zookeeper.quorum", configProp.getProperty("hbase.zookeeper.quorum"));
-		} else {
-			hconf = config;
-		}
+	public Fits2Hbase(FitsFileSet fits, String tablename, int evtLength) throws Exception {
+		ConfigProperties configProp = new ConfigProperties();
+		init(fits, configProp, tablename, evtLength);
+	}
 
-		if (conn == null)
-			hconn = ConnectionFactory.createConnection(hconf);
-		else
-			hconn = conn;
+	private void init(FitsFileSet fits, ConfigProperties configProp, String tablename, int evtLength) throws Exception {
+		this.evtLength = evtLength;
+		this.fits = fits;
+		this.configProp = configProp;
 
-		if (table == null)
-			htable = hconn.getTable(TableName.valueOf(tablename));
-		else
-			htable = table;
+		hconf = HBaseConfiguration.create();
+		hconf.set("hbase.zookeeper.property.clientPort", configProp.getProperty("hbase.zookeeper.property.clientPort"));
+		hconf.set("hbase.zookeeper.quorum", configProp.getProperty("hbase.zookeeper.quorum"));
+		hconn = ConnectionFactory.createConnection(hconf);
+		htable = hconn.getTable(TableName.valueOf(tablename));
+		maxFileThreshold = Long.valueOf(configProp.getProperty("hbase.hregion.filesize.threshold"));
 
-		hcurve = HilbertCurve.small().bits(6).dimensions(3);
-
-		if (regions > 1000 || regions < 1)
-			throw new IOException("regions should be in 1~1000");
+		splits = Bytes.toInt(CellUtil.cloneValue(
+				htable.get(new Get(Bytes.toBytes("meta#initSplit"))).getColumnLatestCell(dataBytes, valueBytes)));
 		List<PhysicalNode> regionPrefix = new ArrayList<PhysicalNode>();
-		for (int i = 0; i < regions; i++)
-			regionPrefix.add(new PhysicalNode(String.format("%03d", i)));
+		for (int i = 0; i < splits; i++)
+			regionPrefix.add(new PhysicalNode(String.valueOf(i)));
 		conHashRouter = new ConsistentHashRouter(regionPrefix, 5);
+
+		Configuration config = new Configuration();
+		config.set("fs.hdfs.impl", org.apache.hadoop.hdfs.DistributedFileSystem.class.getName());
+		this.hdfs = FileSystem.get(new URI(configProp.getProperty("fs.defaultFS")), config,
+				configProp.getProperty("fs.user"));
+
+		timeformat = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss");
 	}
 
 	public void close() throws IOException {
+		htable.close();
 		hconn.close();
-	}
-
-	public Fits2Hbase(List<File> fitsFiles, String tablename, int len, int regions) throws IOException {
-		init(fitsFiles, null, null, null, tablename, len, regions);
-	}
-
-	public Fits2Hbase(List<File> fitsFiles, Configuration config, String tablename, int len, int regions)
-			throws IOException {
-		init(fitsFiles, config, null, null, tablename, len, regions);
-	}
-
-	public Fits2Hbase(List<File> fitsFiles, Configuration config, Connection conn, Table table, int len, int regions)
-			throws IOException {
-		init(fitsFiles, config, conn, table, null, len, regions);
-	}
-
-	public void insert() throws IOException {
-		insertFitsFile(fits);
 	}
 
 	public void run() {
 		try {
-			insertFitsFile(fits);
+			insertFitsFile();
 		} catch (Exception e) {
-			System.out.println("Error: " + e);
+			e.printStackTrace();
 		}
 	}
 
 	public void start() {
-		if(thread == null)
+		if (thread == null)
 			thread = new Thread(this);
 		thread.start();
 	}
 
-	public Thread getThread(){
+	public Thread getThread() {
 		return thread;
 	}
 
@@ -100,107 +113,138 @@ public abstract class Fits2Hbase<E extends Evt> implements Runnable {
 
 	protected abstract E getEvt(byte[] evtBin) throws IOException;
 
-	protected void insertFitsFile(File[] files) throws IOException {
-		for (File file : files)
-			insertFitsFile(file);
-	}
-
-	protected void insertFitsFile(List<File> files) throws IOException {
-		for (File file : files)
-			insertFitsFile(file);
-	}
-
-	protected void insertFitsFile(File file) throws IOException {
-		if (file.isFile())
-			insertFitsFile(file.getAbsolutePath());
-		else
-			throw new IOException(file.getAbsolutePath() + " is not a file");
-	}
-
-	protected void insertFitsFile(String filename) throws IOException {
+	public void insertFitsFile() throws Exception {
 		int preBucket = 0;
 		int timeBucket = 0;
-		SimpleDateFormat timeformat = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss");
-		HashMap<String, LinkedList<E>> map = new HashMap<String, LinkedList<E>>(262144, 0.9f);
-		FitsFile<E> ff = getFitsFile(filename);
-		for (E he : ff) {
-			double time = he.getTime();
-			int timeCell = (int) Math.floor(time / 10.0);
-			timeBucket = timeCell / 64;
-			int timeAxis = timeCell % 64;
-			int eventType = (int) (he.getEventType() & 0x00ff);
-			int detID = (int) (he.getDetID() & 0x00ff);
-			int channel = (int) (he.getChannel() & 0x00ff) / 4;
-			int pulse = (int) (he.getPulseWidth() & 0x00ff) / 4;
-			long index = hcurve.index(timeAxis, channel, pulse);
-			String prefix = conHashRouter.getNode(String.format("%d%d%d", timeBucket, eventType, detID)).getId();
-			String rowkey = String.format("%s%d%d%d#%06d", prefix, timeBucket, eventType, detID, index);
-			if (preBucket == timeBucket) {
-				LinkedList<E> val = map.get(rowkey);
-				if (val == null) {
-					val = new LinkedList<E>();
-					val.add(he);
-					map.put(rowkey, val);
-				} else
-					val.add(he);
-			} else {
-				if (preBucket != 0) {
-					//put
-					put(map);
-					System.out.printf("%s Finished to insert timeBucket(%s):%d\n", timeformat.format(new Date()),
-							filename, timeBucket);
-					map.clear();
+		double time;
+		List<E> bucketEvts = new LinkedList<E>();
+		File currFile = null;
+		FitsFile<E> ff = null;
+		while ((currFile = fits.nextFile()) != null) {
+			ff = getFitsFile(currFile.getAbsolutePath());
+			for (E he : ff) {
+				time = he.getTime();
+				if (preBucket == timeBucket) {
+					bucketEvts.add(he);
+				} else {
+					if (preBucket != 0) {
+						// put
+						put(bucketEvts, timeBucket);
+						System.out.printf("(%.2f%%)%s Finished to insert timeBucket: %s - %d\n",
+								fits.getPercentDone() * 100.0, timeformat.format(new Date()),
+								currFile.getAbsolutePath(), timeBucket);
+						bucketEvts.clear();
+					}
+					preBucket = timeBucket;
+					bucketEvts.add(he);
 				}
-				preBucket = timeBucket;
-				LinkedList<E> val = new LinkedList<E>();
-				val.add(he);
-				map.put(rowkey, val);
 			}
+			System.out.printf("(%.2f%%)%s Completed to insert fits file: %s\n", fits.getPercentDone() * 100.0,
+					timeformat.format(new Date()), currFile.getAbsolutePath());
+			ff.close();
 		}
-		//put remain
-		put(map);
-		System.out.printf("%s Completed to insert fits file: %s\n", timeformat.format(new Date()), filename);
-		ff.close();
+		// put remain
+		put(bucketEvts, timeBucket);
+		bucketEvts.clear();
 	}
 
-	private void put(HashMap<String, LinkedList<E>> map) throws IOException {
-		List<Row> batch = new LinkedList<Row>();
-		int capacity = 20480;
-		int num = 0;
-		for (Map.Entry<String, LinkedList<E>> ent : map.entrySet()) {
-			String key = ent.getKey();
-			LinkedList<E> val = ent.getValue();
-			int size = val.size();
-			byte[] coldata = new byte[evtLength * size];
-			for (int j = 0; j < size; j++) {
-				byte[] eb = val.get(j).getBin();
-				int idx = j * evtLength;
-				for (int k = 0; k < evtLength; k++)
-					coldata[idx + k] = eb[k];
-			}
-			Put put = new Put(Bytes.toBytes(key));
-			put.setDurability(Durability.SKIP_WAL);
-			put.addColumn(Bytes.toBytes("data"), Bytes.toBytes("events"), coldata);
-			put.addColumn(Bytes.toBytes("data"), Bytes.toBytes("size"), Bytes.toBytes(String.valueOf(size)));
-			batch.add(put);
-			num++;
-			if (num == capacity) {
-				Object[] results = new Object[batch.size()];
-				try {
-					htable.batch(batch, results);
-				} catch (Exception e) {
-					System.out.println("Error: " + e);
-				} finally {
-					num = 0;
-					batch.clear();
+	private void put(List<E> bucketEvts, int timeBucket) throws Exception {
+		Map<String, BitArray> bitMap = new HashMap<String, BitArray>();
+		int length = bucketEvts.size();
+		byte[] evtsBin = new byte[length * evtLength];
+		int index = 0;
+		int eventType, detID, channel, pulse, i, binIndex;
+		byte[] bin = null;
+		for (E evt : bucketEvts) {
+			bin = evt.getBin();
+			binIndex = index * evtLength;
+			for (i = 0; i < evtLength; i++)
+				evtsBin[binIndex + i] = bin[i];
+
+			eventType = (int) (evt.getEventType() & 0x00ff);
+			detID = (int) (evt.getDetID() & 0x00ff);
+			channel = (int) (evt.getChannel() & 0x00ff) / 4;
+			pulse = (int) (evt.getPulseWidth() & 0x00ff) / 4;
+			String eventTypeKey = String.format("%s#%03d", "eventType", eventType);
+			String detIDKey = String.format("%s#%03d", "eventType", detID);
+			String channelKey = String.format("%s#%03d", "eventType", channel);
+			String pulseKey = String.format("%s#%03d", "eventType", pulse);
+			String[] keys = { eventTypeKey, detIDKey, channelKey, pulseKey };
+			for (String key : keys) {
+				BitArray bitArray = bitMap.get(key);
+				if (bitArray == null) {
+					bitArray = new BitArray(length);
+					bitArray.set(index);
+					bitMap.put(key, bitArray);
+				} else {
+					bitArray.set(index);
 				}
 			}
+
+			index++;
 		}
-		Object[] results = new Object[batch.size()];
-		try {
-			htable.batch(batch, results);
-		} catch (Exception e) {
-			System.out.println("Error: " + e);
+
+		// get region prefix
+		String regionIndex = conHashRouter.getNode(String.valueOf(timeBucket)).getId();
+		byte[] regionPrefix = CellUtil.cloneValue(htable.get(new Get(Bytes.toBytes("meta#split#" + regionIndex)))
+				.getColumnLatestCell(dataBytes, valueBytes));
+		String regionPrefixStr = Bytes.toString(regionPrefix);
+		// check the capacity of region
+		if (beyondThreshold(regionPrefix)) {
+			long regionId = Long.valueOf(regionPrefixStr);
+			IdLock idLock = new IdLock();
+			IdLock.Entry lockEntry = idLock.getLockEntry(regionId);
+			try {
+				// mount region
+				String regionPrefixCurr = Bytes
+						.toString(CellUtil.cloneValue(htable.get(new Get(Bytes.toBytes("meta#split#" + regionIndex)))
+								.getColumnLatestCell(dataBytes, valueBytes)));
+				if (regionPrefixStr.equals(regionPrefixCurr)) {
+					TableAction tableAction = new TableAction(configProp, htable.getName().getNameAsString());
+					int regionNum = (int) Bytes.toLong(CellUtil.cloneValue(htable
+							.get(new Get(Bytes.toBytes("meta#regions"))).getColumnLatestCell(dataBytes, valueBytes)));
+					String regionPrefixNew = String.format("%04d", regionNum);
+					tableAction.createRegion(regionPrefixNew, String.format("%04d", regionNum + 1));
+					htable.incrementColumnValue(Bytes.toBytes("meta#regions"), dataBytes, valueBytes, 1);
+					System.out.printf("%s mounted a new region: %s\n", timeformat.format(new Date()), regionPrefixNew);
+					// get new region prefix
+					regionPrefixStr = regionPrefixNew;
+				}
+			} finally {
+				idLock.releaseLockEntry(lockEntry);
+			}
 		}
+		// put index
+		List<Put> indexPuts = new LinkedList<Put>();
+		for (Map.Entry<String, BitArray> ent : bitMap.entrySet()) {
+			String rowkey = String.format("%s#%d#%s", regionPrefixStr, timeBucket, ent.getKey());
+			Put indexput = new Put(Bytes.toBytes(rowkey));
+			indexput.addColumn(dataBytes, valueBytes, ent.getValue().getBits());
+			indexPuts.add(indexput);
+		}
+		// put meta information
+		Put metaPut = new Put(Bytes.toBytes("meta#" + timeBucket));
+		metaPut.addColumn(dataBytes, valueBytes, Bytes.toBytes(regionPrefixStr));
+		indexPuts.add(metaPut);
+		htable.put(indexPuts);
+		// put events
+		Put eventsPut = new Put(Bytes.toBytes(regionPrefixStr + "#" + timeBucket));
+		eventsPut.addColumn(dataBytes, valueBytes, evtsBin);
+		eventsPut.addColumn(dataBytes, Bytes.toBytes("length"), Bytes.toBytes(length));
+		htable.put(eventsPut);
+	}
+
+	private boolean beyondThreshold(byte[] startKey) throws Exception {
+		HRegionLocation location = ((HTable) htable).getRegionLocator().getRegionLocation(startKey);
+		TableName tableName = htable.getName();
+		// get region information
+		HRegionInfo regionInfo = location.getRegionInfo();
+		String name = tableName.getNameAsString();
+		String namespace = tableName.getNamespaceAsString();
+		// path of hdfs directory
+		Path regionDir = new Path(configProp.getProperty("hbase.rootdir") + "/data/" + namespace + "/" + name + "/"
+				+ regionInfo.getEncodedName());
+
+		return hdfs.getContentSummary(regionDir).getLength() > maxFileThreshold;
 	}
 }

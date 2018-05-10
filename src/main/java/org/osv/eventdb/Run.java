@@ -1,46 +1,18 @@
 package org.osv.eventdb;
 
-import java.io.*;
-import java.util.*;
-import org.osv.eventdb.fits.io.*;
-import org.osv.eventdb.hbase.*;
-import org.osv.eventdb.util.*;
+import org.osv.eventdb.fits.io.FitsFileSet;
+import org.osv.eventdb.fits.io.HeFits2Hbase;
+import org.osv.eventdb.hbase.TableAction;
+import org.osv.eventdb.util.Fits2Tsv;
+import org.osv.eventdb.util.ObserverAction;
 
 public class Run {
 	public static void main(String[] args) throws Exception {
 		if (args[0].equals("insertHeFits")) {
-			// pathname, talbename, regions, [threads]
-			String pathname = args[1];
-			String tablename = args[2];
-			int regions = Integer.valueOf(args[3]);
-			File fits = new File(pathname);
-			if (fits.isFile()) {
-				List<File> files = new ArrayList<File>();
-				files.add(fits);
-				HeFits2Hbase he = new HeFits2Hbase(files, tablename, regions);
-				he.insert();
-				he.close();
-			} else {
-				File[] files = fits.listFiles();
-				int threads = 20;
-				if (args.length == 5)
-					threads = Integer.valueOf(args[4]);
-				if (threads > files.length)
-					threads = files.length;
-				int fileNum = files.length / threads;
-				int fileIndex = 0;
-				System.out.printf("%s fits files are executed in %s threads\n", files.length, threads);
-				for (int i = 0; i < threads; i++) {
-					List<File> fitsList = new ArrayList<File>();
-					for (int j = 0; j < fileNum; j++)
-						fitsList.add(files[fileIndex++]);
-					if (i == threads - 1)
-						while (fileIndex < files.length)
-							fitsList.add(files[fileIndex++]);
-					HeFits2Hbase he = new HeFits2Hbase(fitsList, tablename, regions);
-					he.start();
-				}
-			}
+			// pathname, talbename, [threads]
+			FitsFileSet fits = new FitsFileSet("");
+			HeFits2Hbase fits2Hbase = new HeFits2Hbase(fits, "eventdbHeFits");
+			fits2Hbase.insertFitsFile();
 
 		} else if (args[0].equals("createTable")) {
 			TableAction taction = new TableAction(args[1]);

@@ -12,7 +12,7 @@ public class HeFitsFile extends FitsFile<HeEvt>{
 		try{
 			return new HeEvt(evtBin);
 		}catch(IOException e){
-			System.out.println(e);
+			e.printStackTrace();
 		}
 		return null;
 	}

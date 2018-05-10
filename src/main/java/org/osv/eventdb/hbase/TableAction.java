@@ -39,6 +39,8 @@ public class TableAction {
 	private Configuration conf;
 	// TableName of the specific hbase table
 	private TableName tableName;
+	// maxFileSize
+	private long maxFileSize;
 
 	/**
 	 * Construct a tableAction specifiying the tableName
@@ -67,6 +69,7 @@ public class TableAction {
 	public TableAction(Configuration conf, String tableName) {
 		this.conf = conf;
 		this.tableName = TableName.valueOf(tableName);
+		maxFileSize = conf.getLong("hbase.hregion.max.filesize", 10737418240L);
 	}
 
 	private void init(ConfigProperties configProp, String tableName) {
@@ -74,6 +77,7 @@ public class TableAction {
 		conf.set("hbase.zookeeper.property.clientPort", configProp.getProperty("hbase.zookeeper.property.clientPort"));
 		conf.set("hbase.zookeeper.quorum", configProp.getProperty("hbase.zookeeper.quorum"));
 		this.tableName = TableName.valueOf(tableName);
+		maxFileSize = Long.valueOf(configProp.getProperty("hbase.hregion.max.filesize"));
 	}
 
 	/**
@@ -171,11 +175,9 @@ public class TableAction {
 		cdesc.setMaxVersions(1).setBlocksize(65536).setBlockCacheEnabled(true).setBloomFilterType(BloomType.ROW)
 				.setTimeToLive(259200).setDataBlockEncoding(DataBlockEncoding.PREFIX_TREE);
 		// .setCompressionType(Compression.Algorithm.SNAPPY);
-		// split when the biggest store file grows beyond the maxFileSize which assigns
-		// 10G
+		// split when the biggest store file grows beyond the maxFileSize
 		tdesc.setValue(HTableDescriptor.SPLIT_POLICY, ConstantSizeRegionSplitPolicy.class.getName());
-		// 10G
-		tdesc.setMaxFileSize(1024 * 1024 * 1024 * 10);
+		tdesc.setMaxFileSize(maxFileSize);
 		tdesc.addFamily(cdesc);
 		admin.createTable(tdesc);
 
@@ -198,25 +200,23 @@ public class TableAction {
 		metaTable.put(put);
 		admin.assign(regionInfo.getRegionName());
 
-		//meta infomartion
+		// meta infomartion
 		Table thisTable = conn.getTable(tableName);
-		//initial number of splits
+		// initial number of splits
 		Put initSplitPut = new Put(Bytes.toBytes("meta#initSplit"));
 		initSplitPut.addColumn(Bytes.toBytes("data"), Bytes.toBytes("value"), Bytes.toBytes(initSplit));
 		thisTable.put(initSplitPut);
-		//current region for the consistent hash
+		// current region for the consistent hash
 		List<Put> splitRegionList = new ArrayList<Put>();
-		for(int i = 0; i < initSplit; i++){
+		for (int i = 0; i < initSplit; i++) {
 			Put regionPut = new Put(Bytes.toBytes("meta#split#" + i));
 			regionPut.addColumn(Bytes.toBytes("data"), Bytes.toBytes("value"), Bytes.toBytes(String.format("%04d", i)));
 			splitRegionList.add(regionPut);
 		}
 		thisTable.put(splitRegionList);
-		//total regions of the table
-		Put regionsPut = new Put(Bytes.toBytes("meta#regions"));
-		regionsPut.addColumn(Bytes.toBytes("data"), Bytes.toBytes("value"), Bytes.toBytes(initSplit));
-		regionsPut.addColumn(Bytes.toBytes("data"), Bytes.toBytes("preRegion"), Bytes.toBytes("none"));
-		thisTable.put(regionsPut);
+		// total regions of the table
+		thisTable.incrementColumnValue(Bytes.toBytes("meta#regions"), Bytes.toBytes("data"), Bytes.toBytes("value"),
+				initSplit);
 
 		thisTable.close();
 		admin.close();
