@@ -10,7 +10,7 @@ public class Run {
 	public static void main(String[] args) throws Exception {
 		if (args[0].equals("insertHeFits")) {
 			// pathname, talbename, [threads]
-			FitsFileSet fits = new FitsFileSet("");
+			FitsFileSet fits = new FitsFileSet(args[1]);
 			HeFits2Hbase fits2Hbase = new HeFits2Hbase(fits, "eventdbHeFits");
 			fits2Hbase.insertFitsFile();
 

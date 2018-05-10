@@ -12,7 +12,7 @@ public abstract class FitsFile<E extends Evt> implements Iterable<E> {
 	private int rowCount;
 	private FileInputStream fin;
 	private String filepath;
-	private int bufferSize = 10 * 1024;
+	private int bufferSize = 1024 * 1024;
 	private byte[] buffer;
 	private int evtStartIndex;
 	private byte[] evtBin;

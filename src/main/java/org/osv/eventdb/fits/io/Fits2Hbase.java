@@ -124,6 +124,7 @@ public abstract class Fits2Hbase<E extends Evt> implements Runnable {
 			ff = getFitsFile(currFile.getAbsolutePath());
 			for (E he : ff) {
 				time = he.getTime();
+				timeBucket = (int) Math.floor(time / 60.0);
 				if (preBucket == timeBucket) {
 					bucketEvts.add(he);
 				} else {
@@ -151,6 +152,7 @@ public abstract class Fits2Hbase<E extends Evt> implements Runnable {
 	private void put(List<E> bucketEvts, int timeBucket) throws Exception {
 		Map<String, BitArray> bitMap = new HashMap<String, BitArray>();
 		int length = bucketEvts.size();
+		System.out.println("event length " + length);
 		byte[] evtsBin = new byte[length * evtLength];
 		int index = 0;
 		int eventType, detID, channel, pulse, i, binIndex;
@@ -166,9 +168,9 @@ public abstract class Fits2Hbase<E extends Evt> implements Runnable {
 			channel = (int) (evt.getChannel() & 0x00ff) / 4;
 			pulse = (int) (evt.getPulseWidth() & 0x00ff) / 4;
 			String eventTypeKey = String.format("%s#%03d", "eventType", eventType);
-			String detIDKey = String.format("%s#%03d", "eventType", detID);
-			String channelKey = String.format("%s#%03d", "eventType", channel);
-			String pulseKey = String.format("%s#%03d", "eventType", pulse);
+			String detIDKey = String.format("%s#%03d", "detID", detID);
+			String channelKey = String.format("%s#%03d", "channel", channel);
+			String pulseKey = String.format("%s#%03d", "pulse", pulse);
 			String[] keys = { eventTypeKey, detIDKey, channelKey, pulseKey };
 			for (String key : keys) {
 				BitArray bitArray = bitMap.get(key);
@@ -220,8 +222,10 @@ public abstract class Fits2Hbase<E extends Evt> implements Runnable {
 			String rowkey = String.format("%s#%d#%s", regionPrefixStr, timeBucket, ent.getKey());
 			Put indexput = new Put(Bytes.toBytes(rowkey));
 			indexput.addColumn(dataBytes, valueBytes, ent.getValue().getBits());
+			System.out.println(ent.getKey() + " length " + ent.getValue().getBits().length);
 			indexPuts.add(indexput);
 		}
+		System.out.println("evtsBin length " + evtsBin.length);
 		// put meta information
 		Put metaPut = new Put(Bytes.toBytes("meta#" + timeBucket));
 		metaPut.addColumn(dataBytes, valueBytes, Bytes.toBytes(regionPrefixStr));
