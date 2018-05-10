@@ -14,6 +14,7 @@ import java.util.Map;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.CellUtil;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HRegionInfo;
@@ -24,6 +25,7 @@ import org.apache.hadoop.hbase.client.ConnectionFactory;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
+import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Table;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.IdLock;
@@ -33,6 +35,7 @@ import org.osv.eventdb.util.BitArray;
 import org.osv.eventdb.util.ConfigProperties;
 import org.osv.eventdb.util.ConsistentHashRouter;
 import org.osv.eventdb.util.PhysicalNode;
+import org.xerial.snappy.Snappy;
 
 public abstract class Fits2Hbase<E extends Evt> implements Runnable {
 	protected FitsFileSet fits;
@@ -67,6 +70,7 @@ public abstract class Fits2Hbase<E extends Evt> implements Runnable {
 		hconf = HBaseConfiguration.create();
 		hconf.set("hbase.zookeeper.property.clientPort", configProp.getProperty("hbase.zookeeper.property.clientPort"));
 		hconf.set("hbase.zookeeper.quorum", configProp.getProperty("hbase.zookeeper.quorum"));
+		hconf.set("hbase.client.keyvalue.maxsize", configProp.getProperty("hbase.client.keyvalue.maxsize"));
 		hconn = ConnectionFactory.createConnection(hconf);
 		htable = hconn.getTable(TableName.valueOf(tablename));
 		maxFileThreshold = Long.valueOf(configProp.getProperty("hbase.hregion.filesize.threshold"));
@@ -150,14 +154,21 @@ public abstract class Fits2Hbase<E extends Evt> implements Runnable {
 	}
 
 	private void put(List<E> bucketEvts, int timeBucket) throws Exception {
+		// bucket information
+		double startTime = 0.0;
+		double endTime = 0.0;
+
 		Map<String, BitArray> bitMap = new HashMap<String, BitArray>();
 		int length = bucketEvts.size();
-		System.out.println("event length " + length);
 		byte[] evtsBin = new byte[length * evtLength];
 		int index = 0;
 		int eventType, detID, channel, pulse, i, binIndex;
 		byte[] bin = null;
 		for (E evt : bucketEvts) {
+			if (index == 0)
+				startTime = evt.getTime();
+			else if (index == length - 1)
+				endTime = evt.getTime();
 			bin = evt.getBin();
 			binIndex = index * evtLength;
 			for (i = 0; i < evtLength; i++)
@@ -186,6 +197,8 @@ public abstract class Fits2Hbase<E extends Evt> implements Runnable {
 			index++;
 		}
 
+		System.out.printf("(%.2f%%)%s Completed to analyse timeBucket: %d\n", fits.getPercentDone() * 100.0,
+				timeformat.format(new Date()), timeBucket);
 		// get region prefix
 		String regionIndex = conHashRouter.getNode(String.valueOf(timeBucket)).getId();
 		byte[] regionPrefix = CellUtil.cloneValue(htable.get(new Get(Bytes.toBytes("meta#split#" + regionIndex)))
@@ -216,26 +229,74 @@ public abstract class Fits2Hbase<E extends Evt> implements Runnable {
 				idLock.releaseLockEntry(lockEntry);
 			}
 		}
+
+		long originalLength = 0;
+		long compactionLength = 0;
+		// old bucket
+		String putCommand = "normal";
+		Get oldBucket = new Get(Bytes.toBytes(regionPrefixStr + "#" + timeBucket));
+		oldBucket.addColumn(dataBytes, Bytes.toBytes("startTime"));
+		oldBucket.addColumn(dataBytes, Bytes.toBytes("endTime"));
+		Result oldBucketResult = htable.get(oldBucket);
+		Cell startCell = oldBucketResult.getColumnLatestCell(dataBytes, Bytes.toBytes("startTime"));
+		Cell endCell = oldBucketResult.getColumnLatestCell(dataBytes, Bytes.toBytes("endTime"));
+		double oldStartTime = 0.0;
+		double oldEndTime = 0.0;
+		if (startCell != null && endCell != null) {
+			oldStartTime = Bytes.toDouble(CellUtil.cloneValue(startCell));
+			oldEndTime = Bytes.toDouble(CellUtil.cloneValue(endCell));
+			if (endTime <= oldStartTime) {
+				endTime = oldEndTime;
+				putCommand = "prepend";
+			} else if (startTime >= oldEndTime) {
+				startTime = oldStartTime;
+				putCommand = "append";
+			}
+			System.out.printf("(%.2f%%)%s has to fix(%s) the timeBucket: %d\n", fits.getPercentDone() * 100.0,
+					timeformat.format(new Date()), putCommand, timeBucket);
+		}
+
+		// exists old bucket
+		boolean existsOldBucket = !putCommand.equals("normal");
+		// put events
+		Put eventsPut = new Put(Bytes.toBytes(regionPrefixStr + "#" + timeBucket));
+		originalLength += evtsBin.length;
+		byte[] comEvtsBin = Snappy.compress(evtsBin);
+		compactionLength += comEvtsBin.length;
+		eventsPut.addColumn(dataBytes, valueBytes, comEvtsBin);
+		if (existsOldBucket)
+			eventsPut.addColumn(dataBytes, Bytes.toBytes("__MDINSERT__"), Bytes.toBytes(putCommand));
+		System.out.printf("%s timeBucket - %d evtsBin compaction %.2f%%\n", timeformat.format(new Date()), timeBucket,
+				(double) compactionLength / (double) originalLength * 100);
+		htable.put(eventsPut);
+
 		// put index
 		List<Put> indexPuts = new LinkedList<Put>();
 		for (Map.Entry<String, BitArray> ent : bitMap.entrySet()) {
 			String rowkey = String.format("%s#%d#%s", regionPrefixStr, timeBucket, ent.getKey());
 			Put indexput = new Put(Bytes.toBytes(rowkey));
-			indexput.addColumn(dataBytes, valueBytes, ent.getValue().getBits());
-			System.out.println(ent.getKey() + " length " + ent.getValue().getBits().length);
+			byte[] bitArr = ent.getValue().getBits();
+			originalLength += bitArr.length;
+			byte[] comBitArr = Snappy.compress(bitArr);
+			compactionLength += comBitArr.length;
+			indexput.addColumn(dataBytes, valueBytes, comBitArr);
+			if (existsOldBucket)
+				indexput.addColumn(dataBytes, Bytes.toBytes("__MDINSERT__"), Bytes.toBytes(putCommand));
 			indexPuts.add(indexput);
 		}
-		System.out.println("evtsBin length " + evtsBin.length);
+		System.out.printf("%s timeBucket - %d total compaction %.2f%%\n", timeformat.format(new Date()), timeBucket,
+				(double) compactionLength / (double) originalLength * 100);
+
+		// events length
+		Put lengthPut = new Put(Bytes.toBytes(regionPrefixStr + "#" + timeBucket));
+		lengthPut.addColumn(dataBytes, Bytes.toBytes("length"), Bytes.toBytes(length));
+		indexPuts.add(lengthPut);
+
 		// put meta information
 		Put metaPut = new Put(Bytes.toBytes("meta#" + timeBucket));
 		metaPut.addColumn(dataBytes, valueBytes, Bytes.toBytes(regionPrefixStr));
 		indexPuts.add(metaPut);
 		htable.put(indexPuts);
-		// put events
-		Put eventsPut = new Put(Bytes.toBytes(regionPrefixStr + "#" + timeBucket));
-		eventsPut.addColumn(dataBytes, valueBytes, evtsBin);
-		eventsPut.addColumn(dataBytes, Bytes.toBytes("length"), Bytes.toBytes(length));
-		htable.put(eventsPut);
 	}
 
 	private boolean beyondThreshold(byte[] startKey) throws Exception {
