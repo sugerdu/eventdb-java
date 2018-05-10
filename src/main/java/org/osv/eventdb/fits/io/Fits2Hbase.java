@@ -50,8 +50,9 @@ public abstract class Fits2Hbase<E extends Evt> implements Runnable {
 	protected long maxFileThreshold;
 	protected ConfigProperties configProp;
 	protected FileSystem hdfs;
-	static byte[] dataBytes = Bytes.toBytes("data");
-	static byte[] valueBytes = Bytes.toBytes("value");
+	protected static byte[] dataBytes = Bytes.toBytes("data");
+	protected static byte[] valueBytes = Bytes.toBytes("value");
+	protected double timeBucketInterval;
 
 	public Fits2Hbase(FitsFileSet fits, ConfigProperties configProp, String tablename, int evtLength) throws Exception {
 		init(fits, configProp, tablename, evtLength);
@@ -66,6 +67,7 @@ public abstract class Fits2Hbase<E extends Evt> implements Runnable {
 		this.evtLength = evtLength;
 		this.fits = fits;
 		this.configProp = configProp;
+		this.timeBucketInterval = Double.valueOf(configProp.getProperty("fits.timeBucketInterval"));
 
 		hconf = HBaseConfiguration.create();
 		hconf.set("hbase.zookeeper.property.clientPort", configProp.getProperty("hbase.zookeeper.property.clientPort"));
@@ -128,29 +130,31 @@ public abstract class Fits2Hbase<E extends Evt> implements Runnable {
 			ff = getFitsFile(currFile.getAbsolutePath());
 			for (E he : ff) {
 				time = he.getTime();
-				timeBucket = (int) Math.floor(time / 60.0);
+				timeBucket = (int) Math.floor(time / timeBucketInterval);
 				if (preBucket == timeBucket) {
 					bucketEvts.add(he);
 				} else {
 					if (preBucket != 0) {
 						// put
-						put(bucketEvts, timeBucket);
+						put(bucketEvts, preBucket);
 						System.out.printf("(%.2f%%)%s Finished to insert timeBucket: %s - %d\n",
 								fits.getPercentDone() * 100.0, timeformat.format(new Date()),
-								currFile.getAbsolutePath(), timeBucket);
+								currFile.getAbsolutePath(), preBucket);
 						bucketEvts.clear();
 					}
 					preBucket = timeBucket;
 					bucketEvts.add(he);
 				}
 			}
-			System.out.printf("(%.2f%%)%s Completed to insert fits file: %s\n", fits.getPercentDone() * 100.0,
+			System.out.printf("(%.2f%%)%s Finished to insert fits file: %s\n", fits.getPercentDone() * 100.0,
 					timeformat.format(new Date()), currFile.getAbsolutePath());
 			ff.close();
 		}
 		// put remain
 		put(bucketEvts, timeBucket);
 		bucketEvts.clear();
+		System.out.printf("(%.2f%%)%s Finished to insert the remaining bucket - %d\n", fits.getPercentDone() * 100.0,
+				timeformat.format(new Date()), timeBucket);
 	}
 
 	private void put(List<E> bucketEvts, int timeBucket) throws Exception {
@@ -197,8 +201,6 @@ public abstract class Fits2Hbase<E extends Evt> implements Runnable {
 			index++;
 		}
 
-		System.out.printf("(%.2f%%)%s Completed to analyse timeBucket: %d\n", fits.getPercentDone() * 100.0,
-				timeformat.format(new Date()), timeBucket);
 		// get region prefix
 		String regionIndex = conHashRouter.getNode(String.valueOf(timeBucket)).getId();
 		byte[] regionPrefix = CellUtil.cloneValue(htable.get(new Get(Bytes.toBytes("meta#split#" + regionIndex)))
@@ -230,8 +232,6 @@ public abstract class Fits2Hbase<E extends Evt> implements Runnable {
 			}
 		}
 
-		long originalLength = 0;
-		long compactionLength = 0;
 		// old bucket
 		String putCommand = "normal";
 		Get oldBucket = new Get(Bytes.toBytes(regionPrefixStr + "#" + timeBucket));
@@ -260,14 +260,9 @@ public abstract class Fits2Hbase<E extends Evt> implements Runnable {
 		boolean existsOldBucket = !putCommand.equals("normal");
 		// put events
 		Put eventsPut = new Put(Bytes.toBytes(regionPrefixStr + "#" + timeBucket));
-		originalLength += evtsBin.length;
-		byte[] comEvtsBin = Snappy.compress(evtsBin);
-		compactionLength += comEvtsBin.length;
-		eventsPut.addColumn(dataBytes, valueBytes, comEvtsBin);
+		eventsPut.addColumn(dataBytes, valueBytes, Snappy.compress(evtsBin));
 		if (existsOldBucket)
 			eventsPut.addColumn(dataBytes, Bytes.toBytes("__MDINSERT__"), Bytes.toBytes(putCommand));
-		System.out.printf("%s timeBucket - %d evtsBin compaction %.2f%%\n", timeformat.format(new Date()), timeBucket,
-				(double) compactionLength / (double) originalLength * 100);
 		htable.put(eventsPut);
 
 		// put index
@@ -275,21 +270,17 @@ public abstract class Fits2Hbase<E extends Evt> implements Runnable {
 		for (Map.Entry<String, BitArray> ent : bitMap.entrySet()) {
 			String rowkey = String.format("%s#%d#%s", regionPrefixStr, timeBucket, ent.getKey());
 			Put indexput = new Put(Bytes.toBytes(rowkey));
-			byte[] bitArr = ent.getValue().getBits();
-			originalLength += bitArr.length;
-			byte[] comBitArr = Snappy.compress(bitArr);
-			compactionLength += comBitArr.length;
-			indexput.addColumn(dataBytes, valueBytes, comBitArr);
+			indexput.addColumn(dataBytes, valueBytes, Snappy.compress(ent.getValue().getBits()));
 			if (existsOldBucket)
 				indexput.addColumn(dataBytes, Bytes.toBytes("__MDINSERT__"), Bytes.toBytes(putCommand));
 			indexPuts.add(indexput);
 		}
-		System.out.printf("%s timeBucket - %d total compaction %.2f%%\n", timeformat.format(new Date()), timeBucket,
-				(double) compactionLength / (double) originalLength * 100);
 
-		// events length
+		// events length && startTime && endTime
 		Put lengthPut = new Put(Bytes.toBytes(regionPrefixStr + "#" + timeBucket));
 		lengthPut.addColumn(dataBytes, Bytes.toBytes("length"), Bytes.toBytes(length));
+		lengthPut.addColumn(dataBytes, Bytes.toBytes("startTime"), Bytes.toBytes(startTime));
+		lengthPut.addColumn(dataBytes, Bytes.toBytes("endTime"), Bytes.toBytes(endTime));
 		indexPuts.add(lengthPut);
 
 		// put meta information
@@ -297,6 +288,10 @@ public abstract class Fits2Hbase<E extends Evt> implements Runnable {
 		metaPut.addColumn(dataBytes, valueBytes, Bytes.toBytes(regionPrefixStr));
 		indexPuts.add(metaPut);
 		htable.put(indexPuts);
+
+		// garbage collection
+		evtsBin = null;
+		bitMap.clear();
 	}
 
 	private boolean beyondThreshold(byte[] startKey) throws Exception {
