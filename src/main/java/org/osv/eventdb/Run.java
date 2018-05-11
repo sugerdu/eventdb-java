@@ -11,7 +11,7 @@ public class Run {
 		if (args[0].equals("insertHeFits")) {
 			// pathname, talbename, [threads]
 			FitsFileSet fits = new FitsFileSet(args[1]);
-			HeFits2Hbase fits2Hbase = new HeFits2Hbase(fits, "eventdbHeFits");
+			HeFits2Hbase fits2Hbase = new HeFits2Hbase(fits, args[2]);
 			fits2Hbase.insertFitsFile();
 
 		} else if (args[0].equals("createTable")) {

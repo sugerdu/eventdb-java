@@ -148,6 +148,7 @@ public abstract class Fits2Hbase<E extends Evt> implements Runnable {
 			}
 			System.out.printf("(%.2f%%)%s Finished to insert fits file: %s\n", fits.getPercentDone() * 100.0,
 					timeformat.format(new Date()), currFile.getAbsolutePath());
+			fits.incDone();
 			ff.close();
 		}
 		// put remain

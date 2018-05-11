@@ -6,7 +6,7 @@ import org.osv.eventdb.hbase.TableAction;
 public class ExperimentTest {
 	@Test
 	public void testExperiment() throws Exception {
-		TableAction action = new TableAction("eventdbHeFits");
-		action.createTable(3);
+		//TableAction action = new TableAction("eventdbHeFits");
+		//action.createTable(3);
 	}
 }
